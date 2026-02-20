@@ -1,0 +1,311 @@
+# 🔬 Nanomanyetik Depo Stok Sistemi — Yerel Ağ Kurulum Rehberi
+
+Bu rehber, Streamlit uygulamanızı yerel ağınızdaki bir sunucuya kurup **birden fazla kişinin aynı anda** erişebilmesini sağlar.
+
+---
+
+## 1. Sunucu Gereksinimleri
+
+| Gereksinim | Minimum |
+|---|---|
+| İşletim Sistemi | Windows 10/11, macOS, Ubuntu 20.04+ |
+| Python | 3.8 veya üzeri |
+| RAM | 2 GB |
+| Disk | 500 MB (uygulama + veriler) |
+| Ağ | Sunucu ve istemciler aynı LAN'da olmalı |
+
+---
+
+## 2. Proje Dosyalarını Sunucuya Kopyalama
+
+Sunucu bilgisayarında bir klasör oluşturun ve aşağıdaki dosyaları kopyalayın:
+
+```
+depo/
+├── app.py
+├── requirements.txt
+├── logo.jpg                  ← (logo dosyanız)
+├── search_component/
+│   └── index.html
+└── data/
+    └── stok_verisi.parquet   ← (varsa, yoksa admin panelden yüklersiniz)
+```
+
+> [!TIP]
+> USB bellek, dosya paylaşımı veya `scp` komutu ile kopyalayabilirsiniz:
+> ```bash
+> scp -r /Users/user/Desktop/Python/depo/ kullanici@SUNUCU_IP:/home/kullanici/depo/
+> ```
+
+---
+
+## 3. Python & Bağımlılıkları Kurma
+
+### macOS / Linux
+```bash
+# Python kontrolü
+python3 --version
+
+# Proje klasörüne git
+cd /home/kullanici/depo
+
+# Sanal ortam oluştur (önerilen)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Bağımlılıkları kur
+pip install -r requirements.txt
+```
+
+### Windows
+```powershell
+# Python kontrolü
+python --version
+
+# Proje klasörüne git
+cd C:\Users\kullanici\depo
+
+# Sanal ortam oluştur
+python -m venv .venv
+.venv\Scripts\activate
+
+# Bağımlılıkları kur
+pip install -r requirements.txt
+```
+
+---
+
+## 4. Streamlit Yapılandırma Dosyası Oluşturma
+
+Proje klasöründe `.streamlit/config.toml` dosyası oluşturun:
+
+```bash
+mkdir -p .streamlit
+```
+
+`.streamlit/config.toml` içeriği:
+
+```toml
+[server]
+# Tüm ağ arayüzlerinden erişime izin ver
+address = "0.0.0.0"
+
+# Port numarası (istediğiniz bir port seçebilirsiniz)
+port = 8501
+
+# Sunucu modunda çalıştır (tarayıcı otomatik açılmasın)
+headless = true
+
+# Aynı anda kaç dosya yüklenebilir (MB)
+maxUploadSize = 200
+
+# CORS ayarları (yerel ağ için)
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# Tarayıcıda gösterilecek adres
+serverAddress = "0.0.0.0"
+gatherUsageStats = false
+```
+
+---
+
+## 5. Uygulamayı Başlatma
+
+### Temel Başlatma
+```bash
+cd /home/kullanici/depo
+source .venv/bin/activate    # Linux/macOS
+# .venv\Scripts\activate     # Windows
+
+streamlit run app.py
+```
+
+Başarılı çıktı:
+```
+  You can now view your Streamlit app in your browser.
+
+  Network URL: http://192.168.1.X:8501    ← Bu adres!
+  External URL: http://X.X.X.X:8501
+```
+
+> [!IMPORTANT]
+> **Network URL** satırındaki IP adresini not edin. Ağdaki diğer cihazlar bu adresi kullanarak erişecek.
+
+---
+
+## 6. Sunucunun IP Adresini Öğrenme
+
+### macOS
+```bash
+ipconfig getifaddr en0      # Wi-Fi
+# veya
+ipconfig getifaddr en1      # Ethernet
+```
+
+### Linux
+```bash
+hostname -I | awk '{print $1}'
+```
+
+### Windows
+```powershell
+ipconfig | findstr "IPv4"
+```
+
+Örnek: Sunucu IP'si `192.168.1.100` ise, diğer cihazlar tarayıcıda şunu açar:
+```
+http://192.168.1.100:8501
+```
+
+---
+
+## 7. Güvenlik Duvarı Ayarları
+
+> [!CAUTION]
+> Port açılmazsa diğer cihazlar erişemez!
+
+### macOS
+macOS güvenlik duvarı genellikle gelen bağlantıları sorar. İzin verin veya:
+```bash
+# Sistem Tercihleri → Güvenlik & Gizlilik → Güvenlik Duvarı → Seçenekler
+# "Gelen bağlantılara izin ver" seçeneğini etkinleştirin
+```
+
+### Windows
+```powershell
+# Yönetici olarak PowerShell açın
+netsh advfirewall firewall add rule name="Streamlit" dir=in action=allow protocol=TCP localport=8501
+```
+
+### Linux (UFW)
+```bash
+sudo ufw allow 8501/tcp
+sudo ufw reload
+```
+
+---
+
+## 8. Uygulamanın Arka Planda Sürekli Çalışması
+
+### Yöntem A: `nohup` (Linux/macOS — Basit)
+```bash
+cd /home/kullanici/depo
+source .venv/bin/activate
+nohup streamlit run app.py > streamlit.log 2>&1 &
+echo $! > streamlit.pid      # PID'yi kaydet
+```
+
+Durdurmak için:
+```bash
+kill $(cat streamlit.pid)
+```
+
+### Yöntem B: `systemd` Servisi (Linux — Önerilen)
+
+`/etc/systemd/system/nanomanyetik.service` dosyası oluşturun:
+
+```ini
+[Unit]
+Description=Nanomanyetik Depo Stok Sistemi
+After=network.target
+
+[Service]
+Type=simple
+User=kullanici
+WorkingDirectory=/home/kullanici/depo
+ExecStart=/home/kullanici/depo/.venv/bin/streamlit run app.py
+Restart=always
+RestartSec=5
+Environment="PATH=/home/kullanici/depo/.venv/bin"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Servisi etkinleştirme:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable nanomanyetik     # Bilgisayar açıldığında otomatik başlat
+sudo systemctl start nanomanyetik      # Şimdi başlat
+sudo systemctl status nanomanyetik     # Durum kontrol
+```
+
+### Yöntem C: Windows Görev Zamanlayıcı
+
+1. `baslat.bat` dosyası oluşturun:
+```batch
+@echo off
+cd C:\Users\kullanici\depo
+call .venv\Scripts\activate
+streamlit run app.py
+```
+
+2. **Görev Zamanlayıcı** → Yeni Görev → Tetikleyici: "Oturum açıldığında" → Eylem: `baslat.bat` çalıştır
+
+---
+
+## 9. Çoklu Kullanıcı Hakkında Bilmeniz Gerekenler
+
+> [!NOTE]
+> Streamlit **her kullanıcı** için ayrı bir oturum (session) oluşturur. Yani herkes kendi arama sorgusunu bağımsız olarak yapabilir.
+
+| Durum | Davranış |
+|---|---|
+| Aynı anda arama | ✅ Her kullanıcı bağımsız arama yapar |
+| Veri yükleme (Admin) | ⚠️ Tek seferde bir kişi yapmalı |
+| Oturum sayısı | Sunucu RAM'ine bağlı (~50-100MB/kullanıcı) |
+| Parquet okuma | ✅ Eş zamanlı okuma sorunsuz |
+
+> [!WARNING]
+> **Admin şifresi (`admin123`) herkes tarafından biliniyorsa**, herhangi biri veri yükleyebilir. Güvenlik için bu şifreyi güçlü bir şifreyle değiştirin → [app.py](file:///Users/user/Desktop/Python/depo/app.py) satır 37: `ADMIN_PASSWORD = "yeni_guclu_sifre"`
+
+---
+
+## 10. Erişim Testi Kontrol Listesi
+
+Sunucuyu başlattıktan sonra bu adımları izleyin:
+
+- [ ] Sunucu terminalinde `Network URL` adresini not edin
+- [ ] Sunucunun kendi tarayıcısında `http://localhost:8501` açın → çalışıyor mu?
+- [ ] Aynı ağdaki başka bir cihazda `http://SUNUCU_IP:8501` açın → çalışıyor mu?
+- [ ] İki farklı cihazdan aynı anda arama yapın → bağımsız mı?
+- [ ] Admin panelden veri yüklemeyi test edin
+
+---
+
+## 11. Sorun Giderme
+
+| Sorun | Çözüm |
+|---|---|
+| "Bağlantı reddedildi" | Güvenlik duvarında port 8501 açık mı? |
+| Sayfa yüklenmiyor | Sunucu IP'si doğru mu? `ping SUNUCU_IP` deneyin |
+| "Address already in use" | `lsof -ti:8501 \| xargs kill` ile eski süreci durdurun |
+| Yavaş performans | Python 3.10+ ve Streamlit 1.28+ sürümüne yükseltin |
+| Logo görünmüyor | [logo.jpg](file:///Users/user/Desktop/Python/depo/nano%20logo.jpg) dosyasının proje klasöründe olduğundan emin olun |
+
+---
+
+## Hızlı Başlangıç Özeti
+
+```bash
+# 1. Dosyaları sunucuya kopyala
+# 2. Bağımlılıkları kur
+cd /yol/depo && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# 3. Yapılandırma oluştur
+mkdir -p .streamlit && cat > .streamlit/config.toml << 'EOF'
+[server]
+address = "0.0.0.0"
+port = 8501
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+EOF
+
+# 4. Başlat
+streamlit run app.py
+
+# 5. Diğer cihazlardan eriş → http://SUNUCU_IP:8501
+```
