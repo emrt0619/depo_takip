@@ -186,7 +186,7 @@ st.set_page_config(
     page_title=PAGE_TITLE,
     page_icon=PAGE_ICON,
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 if "lang" not in st.session_state:
@@ -652,6 +652,12 @@ with st.sidebar:
     )
     st.markdown("---")
 
+    # ── Dil Değiştirici ──
+    if st.button(t("lang_switch"), key="lang_toggle_btn", use_container_width=True):
+        st.session_state.lang = "en" if st.session_state.lang == "tr" else "tr"
+        st.rerun()
+    st.markdown("---")
+
     # ── Admin Kimlik Doğrulama ──
     with st.expander(t("admin_login_title"), expanded=False):
         if not st.session_state.admin_authenticated:
@@ -673,12 +679,12 @@ with st.sidebar:
             if login_clicked:
                 _try_login()
                 if st.session_state.admin_authenticated:
-                    st.experimental_rerun()
+                    st.rerun()
             if st.session_state.get("_admin_login_error"):
                 st.error(t("wrong_password"))
                 st.session_state._admin_login_error = False
             if st.session_state.admin_authenticated:
-                st.experimental_rerun()
+                st.rerun()
         else:
             st.markdown(
                 '<div class="admin-badge">{}</div>'.format(t("admin_active")),
@@ -686,7 +692,7 @@ with st.sidebar:
             )
             if st.button(t("logout_btn"), key="admin_logout_btn"):
                 st.session_state.admin_authenticated = False
-                st.experimental_rerun()
+                st.rerun()
 
     # ── Dosya Yükleme (Sadece Admin) ──
     if st.session_state.admin_authenticated:
@@ -715,61 +721,15 @@ with st.sidebar:
             st.caption("📅 {}".format(mod_time.strftime('%d.%m.%Y – %H:%M')))
             st.caption("💾 {:,.1f} KB".format(size_kb))
 
-
 # ═══════════════════════════════════════════════════════════════════════════
-# CUSTOM SIDEBAR TOGGLE BUTONU
-# ═══════════════════════════════════════════════════════════════════════════
-# Streamlit 1.12'de sidebar varsayılan olarak kapalı başlar (initial_sidebar_state).
-# Kullanıcı sol üstteki > ok ile sidebar'ı açabilir.
-# Header'ı tamamen gizlemek yerine, sadece gereksiz kısımları gizliyoruz.
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# DİL DEĞİŞTİRİCİ BUTON (Sağ üst köşe — fixed position)
+# SIDEBAR AÇMA BUTONU (JS ile parent document'e enjekte)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Streamlit native buton ile sağ üst köşeye yerleştiriyoruz
-col_spacer, col_lang = st.columns([9, 1])
-with col_lang:
-    if st.button(t("lang_switch"), key="lang_toggle_btn"):
-        st.session_state.lang = "en" if st.session_state.lang == "tr" else "tr"
-        st.experimental_rerun()
-
-# Butonu fixed konuma taşıyan CSS hack
-st.markdown(
-    """
-    <style>
-    /* lang_toggle_btn butonunu sağ üst köşeye sabitle */
-    div[data-testid="column"]:last-child .stButton > button {
-        position: fixed !important;
-        top: 14px !important;
-        right: 20px !important;
-        z-index: 99999 !important;
-        background: linear-gradient(135deg, rgba(13, 18, 36, 0.95), rgba(16, 24, 48, 0.95)) !important;
-        border: 1.5px solid rgba(0, 212, 255, 0.3) !important;
-        color: #e0e8f0 !important;
-        font-size: 0.9rem !important;
-        font-weight: 700 !important;
-        padding: 10px 22px !important;
-        border-radius: 24px !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        letter-spacing: 0.5px !important;
-        font-family: 'Inter', sans-serif !important;
-        width: auto !important;
-        min-width: auto !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
-    }
-    div[data-testid="column"]:last-child .stButton > button:hover {
-        border-color: #00d4ff !important;
-        color: #00d4ff !important;
-        box-shadow: 0 0 20px rgba(0, 212, 255, 0.25), 0 4px 16px rgba(0, 0, 0, 0.4) !important;
-        transform: translateY(-1px) !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Harici JS dosyasını oku ve enjekte et
+_toggle_js_path = Path(__file__).resolve().parent / "sidebar_toggle.js"
+if _toggle_js_path.exists():
+    _toggle_js = _toggle_js_path.read_text(encoding="utf-8")
+    components.html("<script>{}</script>".format(_toggle_js), height=0)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ANA SAYFA
