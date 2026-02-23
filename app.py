@@ -107,7 +107,7 @@ TRANSLATIONS = {
         "en": 'No records matching "{q}" were found.',
     },
     "no_results_hint": {"tr": "Farklı anahtar kelimeler deneyebilirsiniz.", "en": "Try different keywords."},
-    "lang_switch": {"tr": "🇬🇧 English", "en": "🇹🇷 Türkçe"},
+    "lang_switch": {"tr": "English", "en": "Türkçe"},
     "stat_last_update": {"tr": "Son Güncelleme", "en": "Last Update"},
 }
 
@@ -186,7 +186,7 @@ st.set_page_config(
     page_title=PAGE_TITLE,
     page_icon=PAGE_ICON,
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 if "lang" not in st.session_state:
@@ -293,6 +293,17 @@ st.markdown(
     .table-container tbody tr:hover {
         background: rgba(0, 212, 255, 0.06) !important;
     }
+    .table-container tbody tr.row-selected {
+        background: rgba(0, 212, 255, 0.15) !important;
+        border-left: 3px solid #00d4ff;
+    }
+    .table-container tbody tr.row-selected td {
+        color: #ffffff !important;
+        font-weight: 600;
+    }
+    .table-container tbody tr.row-selected td:first-child {
+        padding-left: 13px;
+    }
     .table-container tbody td {
         padding: 10px 16px;
         color: #b0c4d8;
@@ -300,6 +311,7 @@ st.markdown(
         max-width: 300px;
         overflow: hidden;
         text-overflow: ellipsis;
+        cursor: pointer;
     }
     .table-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .table-container::-webkit-scrollbar-track { background: #0a0e1a; border-radius: 4px; }
@@ -653,7 +665,9 @@ with st.sidebar:
     st.markdown("---")
 
     # ── Dil Değiştirici ──
-    if st.button(t("lang_switch"), key="lang_toggle_btn", use_container_width=True):
+    _current_lang = st.session_state.get("lang", "tr")
+    _btn_label = "English" if _current_lang == "tr" else "Türkçe"
+    if st.button(_btn_label, key="lang_toggle_btn", use_container_width=True):
         st.session_state.lang = "en" if st.session_state.lang == "tr" else "tr"
         st.rerun()
     st.markdown("---")
@@ -859,8 +873,31 @@ if search_query and search_query.strip():
         )
         # HTML tablo oluştur
         _display_df = results.reset_index(drop=True)
-        _table_html = '<div class="table-container">' + _display_df.to_html(index=False, escape=True, classes='') + '</div>'
+        _raw_table = _display_df.to_html(index=False, escape=True, classes='')
+        _row_click_js = """
+        <script>
+        (function(){
+            var pd = window.parent ? window.parent.document : document;
+            setTimeout(function(){
+                var tables = pd.querySelectorAll('.table-container tbody tr');
+                tables.forEach(function(row){
+                    row.addEventListener('click', function(){
+                        var wasSelected = this.classList.contains('row-selected');
+                        // Önceki seçimi temizle
+                        var allRows = this.closest('tbody').querySelectorAll('tr');
+                        allRows.forEach(function(r){ r.classList.remove('row-selected'); });
+                        // Toggle
+                        if(!wasSelected) this.classList.add('row-selected');
+                    });
+                });
+            }, 500);
+        })();
+        </script>
+        """
+        _table_html = '<div class="table-container">' + _raw_table + '</div>'
         st.markdown(_table_html, unsafe_allow_html=True)
+        # Satır tıklama JS'ini components.html ile enjekte et
+        components.html(_row_click_js, height=0)
 else:
     st.markdown(
         '<div class="guide-text">{}</div>'.format(t("search_guide")),

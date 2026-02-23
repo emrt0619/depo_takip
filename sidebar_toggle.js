@@ -168,4 +168,36 @@
     }
     setInterval(updateIcon, 300);
     updateIcon();
+    // ── Dil butonuna bayrak enjekte et ──
+    var UK_FLAG = '<svg viewBox="0 0 60 30" width="22" height="11" style="vertical-align:middle;border-radius:2px;margin-right:6px;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,0.3)"><clipPath id="flg"><rect width="60" height="30"/></clipPath><g clip-path="url(#flg)"><rect width="60" height="30" fill="#012169"/><path d="M0 0L60 30M60 0L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0L60 30M60 0L0 30" stroke="#C8102E" stroke-width="4"/><path d="M30 0V30M0 15H60" stroke="#fff" stroke-width="10"/><path d="M30 0V30M0 15H60" stroke="#C8102E" stroke-width="6"/></g></svg>';
+    var TR_FLAG = '<svg viewBox="0 0 60 40" width="22" height="15" style="vertical-align:middle;border-radius:2px;margin-right:6px;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,0.3)"><rect width="60" height="40" fill="#E30A17"/><circle cx="23" cy="20" r="10" fill="#fff"/><circle cx="26" cy="20" r="8" fill="#E30A17"/><polygon points="35,20 29.3,22.2 32,17 28,24 33.5,19" fill="#fff" transform="rotate(18,31,20)"/></svg>';
+
+    function injectFlags() {
+        var sidebar = pd.querySelector('[data-testid="stSidebar"]');
+        if (!sidebar) return;
+        var buttons = sidebar.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+            var b = buttons[i];
+            var txt = (b.textContent || '').replace(/\s+/g, ' ').trim();
+            if (txt === 'English' || txt === 'Türkçe') {
+                var expectedType = (txt === 'English') ? 'uk' : 'tr';
+                var existing = b.querySelector('.lang-flag');
+                // Bayrak doğru tipte zaten varsa atla
+                if (existing && existing.getAttribute('data-flag') === expectedType) return;
+                // Yanlış bayrak varsa kaldır
+                if (existing) existing.remove();
+                var flag = pd.createElement('span');
+                flag.className = 'lang-flag';
+                flag.setAttribute('data-flag', expectedType);
+                flag.innerHTML = (expectedType === 'uk') ? UK_FLAG : TR_FLAG;
+                flag.style.cssText = 'display:inline-flex;align-items:center;';
+                b.style.display = 'inline-flex';
+                b.style.alignItems = 'center';
+                b.style.justifyContent = 'center';
+                b.insertBefore(flag, b.firstChild);
+            }
+        }
+    }
+    setInterval(injectFlags, 500);
+    injectFlags();
 })();
