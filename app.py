@@ -168,13 +168,19 @@ def load_parquet_data():
 
 def search_dataframe(df, query):
     # type: (pd.DataFrame, str) -> pd.DataFrame
-    """Tüm sütunlarda case-insensitive arama."""
+    """Tüm sütunlarda case-insensitive, çoklu kelime AND araması (vektörize)."""
     if not query.strip():
         return pd.DataFrame()
-    query_lower = query.strip().lower()
-    mask = pd.Series(False, index=df.index)
-    for col in df.columns:
-        mask |= df[col].astype(str).str.lower().str.contains(query_lower, na=False, regex=False)
+    tokens = query.strip().lower().split()
+    # Tüm sütunları vektörize şekilde tek bir string serisine birleştir
+    cols = [df[c].astype(str).str.lower() for c in df.columns]
+    combined = cols[0]
+    for c in cols[1:]:
+        combined = combined.str.cat(c, sep=" ")
+    # Her token için vektörize AND kontrolü
+    mask = combined.str.contains(tokens[0], na=False, regex=False)
+    for token in tokens[1:]:
+        mask &= combined.str.contains(token, na=False, regex=False)
     return df.loc[mask].head(MAX_RESULTS)
 
 
