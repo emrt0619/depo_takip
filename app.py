@@ -265,13 +265,21 @@ st.markdown(
         border: 1px solid rgba(0, 212, 255, 0.12);
         box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
         margin: 0 auto;
+        position: relative;
     }
     .table-container table {
-        width: 100%;
-        border-collapse: collapse;
+        width: max-content;
+        min-width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
         font-family: 'Inter', sans-serif;
         font-size: 0.82rem;
         white-space: nowrap;
+    }
+    .table-container thead {
+        position: sticky;
+        top: 0;
+        z-index: 11;
     }
     .table-container thead th {
         position: sticky;
@@ -283,9 +291,39 @@ st.markdown(
         text-transform: uppercase;
         letter-spacing: 1.2px;
         font-size: 0.7rem;
-        padding: 14px 16px;
+        padding: 14px 20px 14px 16px;
         border-bottom: 2px solid rgba(0, 212, 255, 0.2);
         text-align: left;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .table-container thead th:hover {
+        background: linear-gradient(135deg, #101830 0%, #152040 100%);
+    }
+    .table-container thead th.sort-asc::after,
+    .table-container thead th.sort-desc::after {
+        margin-left: 6px;
+        font-size: 0.6rem;
+        opacity: 0.9;
+    }
+    .table-container thead th.sort-asc::after { content: '▲'; }
+    .table-container thead th.sort-desc::after { content: '▼'; }
+    /* Resize handle */
+    .th-resize-handle {
+        position: absolute;
+        right: -4px; top: 0; bottom: 0;
+        width: 9px;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M5 16h22M5 16l5-5M5 16l5 5M27 16l-5-5M27 16l-5 5' stroke='white' stroke-width='2.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") 16 16, col-resize;
+        background: transparent;
+        z-index: 20;
+        transition: background 0.15s;
+    }
+    .th-resize-handle:hover,
+    .th-resize-handle.resizing {
+        background: rgba(255, 255, 255, 0.35);
     }
     .table-container tbody tr {
         transition: background 0.15s ease;
@@ -381,7 +419,8 @@ st.markdown(
         box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.02) !important;
         background: rgba(10, 14, 26, 0.95) !important;
         color: #e8f0fe !important;
-        caret-color: #00d4ff !important;
+        caret-color: white !important;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='28' viewBox='0 0 20 28'%3E%3Cpath d='M6 1H14M10 1V27M6 27H14' stroke='white' stroke-width='2.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") 10 14, text !important;
         transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
         letter-spacing: 0.2px !important;
     }
@@ -880,30 +919,175 @@ if search_query and search_query.strip():
         # HTML tablo oluştur
         _display_df = results.reset_index(drop=True)
         _raw_table = _display_df.to_html(index=False, escape=True, classes='')
-        _row_click_js = """
+        _table_js = """
         <script>
         (function(){
             var pd = window.parent ? window.parent.document : document;
             setTimeout(function(){
-                var tables = pd.querySelectorAll('.table-container tbody tr');
-                tables.forEach(function(row){
+                var container = pd.querySelector('.table-container');
+                if (!container) return;
+                var table = container.querySelector('table');
+                if (!table) return;
+                var headers = table.querySelectorAll('thead th');
+
+                // ── Colgroup'u ilk resize'da oluştur (başlangıçta tablo kompakt kalır) ──
+                function ensureColgroup() {
+                    var cg = table.querySelector('colgroup');
+                    if (cg) return cg;
+                    // Mevcut doğal genişlikleri ölç
+                    var widths = [];
+                    headers.forEach(function(th) {
+                        widths.push(th.offsetWidth);
+                    });
+                    cg = pd.createElement('colgroup');
+                    widths.forEach(function(w) {
+                        var col = pd.createElement('col');
+                        col.style.width = w + 'px';
+                        cg.appendChild(col);
+                    });
+                    table.insertBefore(cg, table.firstChild);
+                    table.style.tableLayout = 'fixed';
+                    return cg;
+                }
+
+                // ── Sütun başlıklarına position:relative ekle ──
+                headers.forEach(function(th) {
+                    th.style.position = 'relative';
+                });
+
+                // ── Resize Handle Ekleme ──
+                headers.forEach(function(th, idx){
+                    if (th.querySelector('.th-resize-handle')) return;
+                    var handle = pd.createElement('div');
+                    handle.className = 'th-resize-handle';
+                    th.appendChild(handle);
+
+                    var startX, startW;
+                    handle.addEventListener('mousedown', function(e){
+                        e.stopPropagation();
+                        e.preventDefault();
+                        var cg = ensureColgroup();
+                        var col = cg.querySelectorAll('col')[idx];
+                        startX = e.pageX;
+                        startW = parseInt(col.style.width) || th.offsetWidth;
+                        handle.classList.add('resizing');
+
+                        function onMove(ev){
+                            var newW = startW + (ev.pageX - startX);
+                            if (newW < 40) newW = 40;
+                            col.style.width = newW + 'px';
+                        }
+                        function onUp(){
+                            handle.classList.remove('resizing');
+                            pd.removeEventListener('mousemove', onMove);
+                            pd.removeEventListener('mouseup', onUp);
+                        }
+                        pd.addEventListener('mousemove', onMove);
+                        pd.addEventListener('mouseup', onUp);
+                    });
+
+                    // ── Çift tıklama ile auto-fit ──
+                    handle.addEventListener('dblclick', function(e){
+                        e.stopPropagation();
+                        e.preventDefault();
+                        var cg = ensureColgroup();
+                        var col = cg.querySelectorAll('col')[idx];
+                        // İçeriğin tam genişliğini hesapla
+                        var maxW = th.scrollWidth;
+                        table.querySelectorAll('tbody tr').forEach(function(row){
+                            var cell = row.children[idx];
+                            if (cell) {
+                                var w = cell.scrollWidth + 20;
+                                if (w > maxW) maxW = w;
+                            }
+                        });
+                        col.style.width = maxW + 'px';
+                    });
+                });
+
+                // ── Sıralama (Sorting) ──
+                var sortState = {};  // { colIdx: 'asc' | 'desc' }
+                headers.forEach(function(th, colIdx){
+                    if (th.dataset.sortBound) return;
+                    th.dataset.sortBound = '1';
+                    th.addEventListener('click', function(e){
+                        // Resize handle tıklamalarında sıralama yapma
+                        if (e.target.classList.contains('th-resize-handle')) return;
+
+                        var tbody = table.querySelector('tbody');
+                        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+                        // Mevcut durumu belirle: yok → asc → desc → yok
+                        var current = sortState[colIdx] || 'none';
+                        var next;
+                        if      (current === 'none') next = 'asc';
+                        else if (current === 'asc')  next = 'desc';
+                        else                          next = 'none';
+
+                        // Tüm sütunların sınıfını temizle
+                        headers.forEach(function(h, i){
+                            h.classList.remove('sort-asc', 'sort-desc');
+                            if (i !== colIdx) delete sortState[i];
+                        });
+
+                        if (next === 'none') {
+                            delete sortState[colIdx];
+                            // Orijinal sıraya dön (data-orig-idx kullan)
+                            rows.sort(function(a, b){
+                                return (parseInt(a.dataset.origIdx)||0) - (parseInt(b.dataset.origIdx)||0);
+                            });
+                        } else {
+                            sortState[colIdx] = next;
+                            th.classList.add('sort-' + next);
+                            var dir = next === 'asc' ? 1 : -1;
+
+                            rows.sort(function(a, b){
+                                var aCell = a.children[colIdx];
+                                var bCell = b.children[colIdx];
+                                var aVal = aCell ? aCell.textContent.trim() : '';
+                                var bVal = bCell ? bCell.textContent.trim() : '';
+                                // Sayısal karşılaştırma dene
+                                var aNum = parseFloat(aVal.replace(/[^\d.\-]/g, ''));
+                                var bNum = parseFloat(bVal.replace(/[^\d.\-]/g, ''));
+                                if (!isNaN(aNum) && !isNaN(bNum)) {
+                                    return (aNum - bNum) * dir;
+                                }
+                                // Metin karşılaştırma (locale-aware)
+                                return aVal.localeCompare(bVal, 'tr', {sensitivity:'base'}) * dir;
+                            });
+                        }
+
+                        // DOM'u güncelle
+                        rows.forEach(function(row){ tbody.appendChild(row); });
+                    });
+                });
+
+                // ── Orijinal sıra indeksi kaydet ──
+                var allRows = table.querySelectorAll('tbody tr');
+                allRows.forEach(function(row, i){
+                    if (!row.dataset.origIdx) row.dataset.origIdx = i;
+                });
+
+                // ── Satır Seçme (Row Click) ──
+                allRows.forEach(function(row){
+                    if (row.dataset.clickBound) return;
+                    row.dataset.clickBound = '1';
                     row.addEventListener('click', function(){
                         var wasSelected = this.classList.contains('row-selected');
-                        // Önceki seçimi temizle
-                        var allRows = this.closest('tbody').querySelectorAll('tr');
-                        allRows.forEach(function(r){ r.classList.remove('row-selected'); });
-                        // Toggle
+                        var siblings = this.closest('tbody').querySelectorAll('tr');
+                        siblings.forEach(function(r){ r.classList.remove('row-selected'); });
                         if(!wasSelected) this.classList.add('row-selected');
                     });
                 });
+
             }, 500);
         })();
         </script>
         """
         _table_html = '<div class="table-container">' + _raw_table + '</div>'
         st.markdown(_table_html, unsafe_allow_html=True)
-        # Satır tıklama JS'ini components.html ile enjekte et
-        components.html(_row_click_js, height=0)
+        # Tablo etkileşim JS'ini components.html ile enjekte et
+        components.html(_table_js, height=0)
 else:
     st.markdown(
         '<div class="guide-text">{}</div>'.format(t("search_guide")),
@@ -918,7 +1102,7 @@ st.markdown(
     """
     <div class="app-footer">
         <div class="footer-line">© 2026 Nanomanyetik Bilimsel Cihazlar</div>
-        <div class="footer-version">Depo Stok Yönetim Sistemi · v2.2</div>
+        <div class="footer-version">Depo Stok Yönetim Sistemi · v2.3</div>
     </div>
     """,
     unsafe_allow_html=True,
