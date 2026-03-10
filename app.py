@@ -33,6 +33,8 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+import analytics
+
 # ═══════════════════════════════════════════════════════════════════════════
 # SABİTLER
 # ═══════════════════════════════════════════════════════════════════════════
@@ -109,6 +111,42 @@ TRANSLATIONS = {
     "no_results_hint": {"tr": "Farklı anahtar kelimeler deneyebilirsiniz.", "en": "Try different keywords."},
     "lang_switch": {"tr": "English", "en": "Türkçe"},
     "stat_last_update": {"tr": "Son Güncelleme", "en": "Last Update"},
+    # ── Analytics Dashboard Translations ──
+    "analytics_btn": {"tr": "📊 Analitik Panel", "en": "📊 Analytics Panel"},
+    "analytics_title": {"tr": "📊 Analitik Dashboard", "en": "📊 Analytics Dashboard"},
+    "analytics_back": {"tr": "← Ana Sayfaya Dön", "en": "← Back to Main"},
+    "analytics_overview": {"tr": "Genel Bakış", "en": "Overview"},
+    "analytics_total_visits": {"tr": "Toplam Ziyaret", "en": "Total Visits"},
+    "analytics_total_searches": {"tr": "Toplam Arama", "en": "Total Searches"},
+    "analytics_today_visits": {"tr": "Bugün Ziyaret", "en": "Today Visits"},
+    "analytics_today_searches": {"tr": "Bugün Arama", "en": "Today Searches"},
+    "analytics_admin_logins": {"tr": "Admin Girişi", "en": "Admin Logins"},
+    "analytics_file_uploads": {"tr": "Dosya Yükleme", "en": "File Uploads"},
+    "analytics_yearly_visits": {"tr": "📈 Yıllık Ziyaret Grafiği", "en": "📈 Yearly Visits Chart"},
+    "analytics_monthly_visits": {"tr": "📅 Aylık Ziyaret Grafiği", "en": "📅 Monthly Visits Chart"},
+    "analytics_select_year": {"tr": "Yıl Seçin", "en": "Select Year"},
+    "analytics_daily_trend": {"tr": "📊 Son 30 Gün Trend", "en": "📊 Last 30 Days Trend"},
+    "analytics_hourly_dist": {"tr": "⏰ Saatlik Aktivite Dağılımı", "en": "⏰ Hourly Activity Distribution"},
+    "analytics_weekday_dist": {"tr": "📆 Haftalık Dağılım", "en": "📆 Weekly Distribution"},
+    "analytics_search_stats": {"tr": "🔍 Arama İstatistikleri", "en": "🔍 Search Statistics"},
+    "analytics_daily_avg": {"tr": "Günlük Ortalama", "en": "Daily Average"},
+    "analytics_unique_terms": {"tr": "Benzersiz Terim", "en": "Unique Terms"},
+    "analytics_avg_results": {"tr": "Ort. Sonuç", "en": "Avg. Results"},
+    "analytics_top_searches": {"tr": "🏆 En Çok Aranan Terimler", "en": "🏆 Top Search Terms"},
+    "analytics_search_term": {"tr": "Arama Terimi", "en": "Search Term"},
+    "analytics_search_count": {"tr": "Arama Sayısı", "en": "Search Count"},
+    "analytics_login_history": {"tr": "🔐 Admin Giriş Geçmişi", "en": "🔐 Admin Login History"},
+    "analytics_login_time": {"tr": "Zaman", "en": "Time"},
+    "analytics_login_status": {"tr": "Durum", "en": "Status"},
+    "analytics_login_success": {"tr": "✅ Başarılı", "en": "✅ Success"},
+    "analytics_login_failed": {"tr": "❌ Başarısız", "en": "❌ Failed"},
+    "analytics_no_data": {"tr": "Henüz veri bulunmuyor. Kullanım arttıkça istatistikler burada görünecek.", "en": "No data yet. Statistics will appear here as usage increases."},
+    "analytics_export_csv": {"tr": "📥 CSV Dışa Aktar", "en": "📥 Export CSV"},
+    "analytics_clear_old": {"tr": "🗑️ Eski Logları Temizle (6 ay+)", "en": "🗑️ Clear Old Logs (6 months+)"},
+    "analytics_cleared": {"tr": "{} eski kayıt temizlendi.", "en": "{} old records cleared."},
+    "analytics_visits": {"tr": "Ziyaret", "en": "Visits"},
+    "analytics_searches": {"tr": "Arama", "en": "Searches"},
+    "analytics_search_trend": {"tr": "🔍 Son 30 Gün Arama Trendi", "en": "🔍 Last 30 Days Search Trend"},
 }
 
 
@@ -185,6 +223,294 @@ def search_dataframe(df, query):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# ANALİTİK DASHBOARD RENDER FONKSİYONU
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _build_bar_chart_html(data_dict, max_height=180):
+    """Verilen sözlükten CSS bar chart HTML'i oluştur."""
+    if not data_dict or all(v == 0 for v in data_dict.values()):
+        return '<div class="analytics-no-data"><div class="no-data-icon">📭</div>{}</div>'.format(
+            t("analytics_no_data")
+        )
+    max_val = max(data_dict.values()) or 1
+    bars_html = ""
+    for label, value in data_dict.items():
+        h = max(4, int((value / max_val) * max_height))
+        bars_html += """
+        <div class="analytics-bar-wrapper">
+            <div class="analytics-bar-value">{val}</div>
+            <div class="analytics-bar" style="height:{h}px;" title="{label}: {val}"></div>
+            <div class="analytics-bar-label">{label}</div>
+        </div>""".format(val=value, h=h, label=label)
+    return '<div class="analytics-bar-chart">{}</div>'.format(bars_html)
+
+
+def _build_trend_html(data_dict, max_height=100):
+    """Mini trend çizgi grafiği oluştur."""
+    if not data_dict or all(v == 0 for v in data_dict.values()):
+        return '<div class="analytics-no-data"><div class="no-data-icon">📭</div>{}</div>'.format(
+            t("analytics_no_data")
+        )
+    max_val = max(data_dict.values()) or 1
+    bars_html = ""
+    for date_str, value in data_dict.items():
+        h = max(2, int((value / max_val) * max_height))
+        short_label = date_str[-2:]  # Günün sayısı
+        bars_html += '<div class="analytics-trend-bar" style="height:{h}px;" title="{d}: {v}"></div>'.format(
+            h=h, d=date_str, v=value
+        )
+    return '<div class="analytics-trend-line">{}</div>'.format(bars_html)
+
+
+def _render_analytics_dashboard():
+    """Analitik dashboard sayfasını render et."""
+    lang = st.session_state.get("lang", "tr")
+
+    # ── Başlık ──
+    st.markdown(
+        """
+        <div class="analytics-header">
+            <h1>{title}</h1>
+            <p>{sub}</p>
+        </div>
+        """.format(
+            title=t("analytics_title"),
+            sub="Nanomanyetik Bilimsel Cihazlar — " + (
+                "Kullanım Analizi" if lang == "tr" else "Usage Analytics"
+            ),
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ── Ana Sayfaya Dön ──
+    if st.button(t("analytics_back"), key="analytics_back_btn"):
+        st.session_state.current_page = "main"
+        st.rerun()
+
+    # ── Genel Bakış Metrikleri ──
+    stats = analytics.get_overview_stats()
+    overview_cards = [
+        ("👁️", stats["total_visits"], t("analytics_total_visits")),
+        ("🔍", stats["total_searches"], t("analytics_total_searches")),
+        ("📅", stats["today_visits"], t("analytics_today_visits")),
+        ("🔎", stats["today_searches"], t("analytics_today_searches")),
+        ("🔐", stats["total_logins"], t("analytics_admin_logins")),
+        ("📤", stats["total_uploads"], t("analytics_file_uploads")),
+    ]
+    cards_html = ""
+    for icon, value, label in overview_cards:
+        cards_html += """
+        <div class="analytics-metric-card">
+            <div class="analytics-metric-icon">{icon}</div>
+            <div class="analytics-metric-value">{value}</div>
+            <div class="analytics-metric-label">{label}</div>
+        </div>""".format(icon=icon, value="{:,}".format(value), label=label)
+
+    st.markdown(
+        '<div class="analytics-overview-grid">{}</div>'.format(cards_html),
+        unsafe_allow_html=True,
+    )
+
+    # ═══ BÖLÜM 1: Ziyaret Grafikleri ═══
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # ── Yıllık Ziyaret ──
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_yearly_visits")),
+            unsafe_allow_html=True,
+        )
+        yearly_data = analytics.get_visit_stats_by_year()
+        yearly_chart = _build_bar_chart_html(yearly_data)
+        st.markdown(yearly_chart, unsafe_allow_html=True)
+
+    with col2:
+        # ── Aylık Ziyaret ──
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_monthly_visits")),
+            unsafe_allow_html=True,
+        )
+        available_years = analytics.get_available_years()
+        selected_year = st.selectbox(
+            t("analytics_select_year"),
+            options=available_years,
+            index=len(available_years) - 1,
+            key="analytics_year_select",
+        )
+        monthly_data = analytics.get_visit_stats_by_month(selected_year)
+        month_names = analytics.MONTH_NAMES.get(lang, analytics.MONTH_NAMES["tr"])
+        monthly_labeled = {month_names[m - 1]: v for m, v in monthly_data.items()}
+        monthly_chart = _build_bar_chart_html(monthly_labeled)
+        st.markdown(monthly_chart, unsafe_allow_html=True)
+
+    # ═══ BÖLÜM 2: Trend Grafikleri ═══
+    col3, col4 = st.columns(2)
+
+    with col3:
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_daily_trend")),
+            unsafe_allow_html=True,
+        )
+        daily_data = analytics.get_daily_visits(30)
+        daily_trend = _build_trend_html(daily_data)
+        st.markdown(daily_trend, unsafe_allow_html=True)
+
+    with col4:
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_search_trend")),
+            unsafe_allow_html=True,
+        )
+        search_daily = analytics.get_search_daily_trend(30)
+        search_trend = _build_trend_html(search_daily)
+        st.markdown(search_trend, unsafe_allow_html=True)
+
+    # ═══ BÖLÜM 3: Saatlik & Haftalık Dağılım ═══
+    col5, col6 = st.columns(2)
+
+    with col5:
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_hourly_dist")),
+            unsafe_allow_html=True,
+        )
+        hourly_data = analytics.get_hourly_distribution()
+        hourly_labeled = {"{:02d}".format(h): v for h, v in hourly_data.items()}
+        hourly_chart = _build_bar_chart_html(hourly_labeled, max_height=140)
+        st.markdown(hourly_chart, unsafe_allow_html=True)
+
+    with col6:
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_weekday_dist")),
+            unsafe_allow_html=True,
+        )
+        weekday_data = analytics.get_weekday_distribution(lang)
+        weekday_chart = _build_bar_chart_html(weekday_data, max_height=140)
+        st.markdown(weekday_chart, unsafe_allow_html=True)
+
+    # ═══ BÖLÜM 4: Arama İstatistikleri ═══
+    st.markdown(
+        '<div class="analytics-section-title">{}</div>'.format(t("analytics_search_stats")),
+        unsafe_allow_html=True,
+    )
+    search_stats = analytics.get_search_stats()
+
+    search_cards = [
+        ("🔍", search_stats["total"], t("analytics_total_searches")),
+        ("📊", search_stats["daily_avg"], t("analytics_daily_avg")),
+        ("🏷️", search_stats["unique_terms"], t("analytics_unique_terms")),
+        ("📋", search_stats["avg_results"], t("analytics_avg_results")),
+    ]
+    search_cards_html = ""
+    for icon, value, label in search_cards:
+        search_cards_html += """
+        <div class="analytics-metric-card">
+            <div class="analytics-metric-icon">{icon}</div>
+            <div class="analytics-metric-value">{value}</div>
+            <div class="analytics-metric-label">{label}</div>
+        </div>""".format(icon=icon, value=value, label=label)
+    st.markdown(
+        '<div class="analytics-overview-grid">{}</div>'.format(search_cards_html),
+        unsafe_allow_html=True,
+    )
+
+    # ── En Çok Aranan Terimler ──
+    col7, col8 = st.columns(2)
+
+    with col7:
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_top_searches")),
+            unsafe_allow_html=True,
+        )
+        top_searches = analytics.get_top_searches(10)
+        if top_searches:
+            rows_html = ""
+            for i, (term, count) in enumerate(top_searches, 1):
+                rows_html += "<tr><td>{}</td><td><strong>{}</strong></td><td>{}</td></tr>".format(
+                    i, term, count
+                )
+            table_html = """
+            <table class="analytics-table">
+                <thead><tr>
+                    <th>#</th>
+                    <th>{term_col}</th>
+                    <th>{count_col}</th>
+                </tr></thead>
+                <tbody>{rows}</tbody>
+            </table>""".format(
+                term_col=t("analytics_search_term"),
+                count_col=t("analytics_search_count"),
+                rows=rows_html,
+            )
+            st.markdown(table_html, unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<div class="analytics-no-data"><div class="no-data-icon">🔍</div>{}</div>'.format(
+                    t("analytics_no_data")
+                ),
+                unsafe_allow_html=True,
+            )
+
+    with col8:
+        # ── Admin Giriş Geçmişi ──
+        st.markdown(
+            '<div class="analytics-section-title">{}</div>'.format(t("analytics_login_history")),
+            unsafe_allow_html=True,
+        )
+        recent_logins = analytics.get_recent_admin_logins(15)
+        if recent_logins:
+            login_rows = ""
+            for login in recent_logins:
+                status = t("analytics_login_success") if login["success"] else t("analytics_login_failed")
+                login_rows += "<tr><td>{}</td><td>{}</td></tr>".format(
+                    login["timestamp"], status
+                )
+            login_table = """
+            <table class="analytics-table">
+                <thead><tr>
+                    <th>{time_col}</th>
+                    <th>{status_col}</th>
+                </tr></thead>
+                <tbody>{rows}</tbody>
+            </table>""".format(
+                time_col=t("analytics_login_time"),
+                status_col=t("analytics_login_status"),
+                rows=login_rows,
+            )
+            st.markdown(login_table, unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<div class="analytics-no-data"><div class="no-data-icon">🔐</div>{}</div>'.format(
+                    t("analytics_no_data")
+                ),
+                unsafe_allow_html=True,
+            )
+
+    # ═══ BÖLÜM 5: Yönetim Araçları ═══
+    st.markdown("---")
+    tool_col1, tool_col2, _ = st.columns([1, 1, 2])
+
+    with tool_col1:
+        # CSV Dışa Aktarma
+        csv_data = analytics.export_events_csv()
+        if csv_data:
+            st.download_button(
+                label=t("analytics_export_csv"),
+                data=csv_data,
+                file_name="analytics_export_{}.csv".format(
+                    datetime.now().strftime("%Y%m%d_%H%M")
+                ),
+                mime="text/csv",
+                key="analytics_csv_download",
+                use_container_width=True,
+            )
+
+    with tool_col2:
+        # Eski Logları Temizle
+        if st.button(t("analytics_clear_old"), key="analytics_clear_btn", use_container_width=True):
+            cleared = analytics.clear_old_logs(180)
+            st.success(t("analytics_cleared").format(cleared))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # STREAMLIT SAYFA AYARLARI
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -199,6 +525,13 @@ if "lang" not in st.session_state:
     st.session_state.lang = "tr"
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "main"
+
+# ── Sayfa ziyaret logu (oturum başına 1 kez) ──
+if "_visit_logged" not in st.session_state:
+    st.session_state._visit_logged = True
+    analytics.log_event("page_visit")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -679,6 +1012,199 @@ st.markdown(
     div[data-testid="InputInstructions"] {
         display: none !important;
     }
+
+    /* ═══ ANALYTICS DASHBOARD ═══ */
+    .analytics-header {
+        text-align: center;
+        padding: 16px 20px 8px 20px;
+        animation: fadeSlideUp 0.5s ease-out;
+    }
+    .analytics-header h1 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #33e0ff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 4px;
+        letter-spacing: 1px;
+    }
+    .analytics-header p {
+        color: #3a5068;
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+    }
+    .analytics-overview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin: 16px auto 24px auto;
+        max-width: 1000px;
+        animation: fadeSlideUp 0.6s ease-out;
+    }
+    .analytics-metric-card {
+        background: linear-gradient(145deg, rgba(10,16,30,0.95), rgba(14,22,44,0.95));
+        border: 1px solid rgba(0, 212, 255, 0.08);
+        border-radius: 14px;
+        padding: 18px 16px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .analytics-metric-card:hover {
+        border-color: rgba(0, 212, 255, 0.3);
+        box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
+        transform: translateY(-3px);
+    }
+    .analytics-metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+        opacity: 0.4;
+    }
+    .analytics-metric-icon {
+        font-size: 1.5rem;
+        margin-bottom: 6px;
+        filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.3));
+    }
+    .analytics-metric-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #00d4ff;
+        line-height: 1.2;
+        text-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+    }
+    .analytics-metric-label {
+        font-size: 0.6rem;
+        color: #3a5068;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-top: 4px;
+        font-weight: 600;
+    }
+    .analytics-section-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #a0b4c8;
+        margin: 28px 0 12px 0;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(0, 212, 255, 0.08);
+        letter-spacing: 0.5px;
+    }
+    .analytics-bar-chart {
+        display: flex;
+        align-items: flex-end;
+        gap: 6px;
+        height: 200px;
+        padding: 12px 0;
+        margin: 8px 0;
+    }
+    .analytics-bar-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+        justify-content: flex-end;
+    }
+    .analytics-bar {
+        width: 100%;
+        max-width: 60px;
+        background: linear-gradient(180deg, #00d4ff 0%, #0077aa 100%);
+        border-radius: 6px 6px 2px 2px;
+        min-height: 4px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+    }
+    .analytics-bar:hover {
+        background: linear-gradient(180deg, #33e0ff 0%, #0099cc 100%);
+        box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+    }
+    .analytics-bar-value {
+        font-size: 0.65rem;
+        color: #00d4ff;
+        font-weight: 700;
+        margin-bottom: 4px;
+        text-align: center;
+    }
+    .analytics-bar-label {
+        font-size: 0.6rem;
+        color: #3a5068;
+        margin-top: 6px;
+        text-align: center;
+        font-weight: 500;
+    }
+    .analytics-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.82rem;
+        margin: 8px 0;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(0, 212, 255, 0.08);
+    }
+    .analytics-table thead th {
+        background: linear-gradient(135deg, #0d1224 0%, #111a33 100%);
+        color: #00d4ff;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.68rem;
+        padding: 12px 16px;
+        border-bottom: 2px solid rgba(0, 212, 255, 0.15);
+        text-align: left;
+    }
+    .analytics-table tbody tr {
+        transition: background 0.15s ease;
+    }
+    .analytics-table tbody tr:nth-child(even) {
+        background: rgba(10, 16, 32, 0.6);
+    }
+    .analytics-table tbody tr:nth-child(odd) {
+        background: rgba(6, 10, 20, 0.8);
+    }
+    .analytics-table tbody tr:hover {
+        background: rgba(0, 212, 255, 0.06) !important;
+    }
+    .analytics-table tbody td {
+        padding: 10px 16px;
+        color: #b0c4d8;
+        border-bottom: 1px solid rgba(0, 212, 255, 0.04);
+    }
+    .analytics-no-data {
+        text-align: center;
+        padding: 48px 20px;
+        color: #3a5068;
+        font-size: 0.9rem;
+        animation: fadeSlideUp 0.5s ease-out;
+    }
+    .analytics-no-data .no-data-icon {
+        font-size: 3rem;
+        margin-bottom: 16px;
+        opacity: 0.4;
+    }
+    .analytics-trend-line {
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 120px;
+        padding: 8px 0;
+        margin: 8px 0;
+    }
+    .analytics-trend-bar {
+        flex: 1;
+        background: linear-gradient(180deg, rgba(0,212,255,0.7) 0%, rgba(0,119,170,0.3) 100%);
+        border-radius: 3px 3px 0 0;
+        min-height: 2px;
+        transition: all 0.3s ease;
+    }
+    .analytics-trend-bar:hover {
+        background: linear-gradient(180deg, #00d4ff 0%, #0077aa 100%);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -724,8 +1250,10 @@ with st.sidebar:
                 pw = st.session_state.get("admin_pw_input", "")
                 if pw == ADMIN_PASSWORD:
                     st.session_state.admin_authenticated = True
+                    analytics.log_event("admin_login", {"success": True})
                 elif pw:
                     st.session_state._admin_login_error = True
+                    analytics.log_event("admin_login", {"success": False})
 
             password = st.text_input(
                 t("password_label"),
@@ -756,6 +1284,15 @@ with st.sidebar:
     # ── Dosya Yükleme (Sadece Admin) ──
     if st.session_state.admin_authenticated:
         st.markdown("---")
+
+        # ── Analitik Butonu (Admin) ──
+        if st.button(t("analytics_btn"), key="analytics_nav_btn", use_container_width=True):
+            st.session_state.current_page = (
+                "main" if st.session_state.current_page == "analytics" else "analytics"
+            )
+            st.rerun()
+
+        st.markdown("---")
         st.markdown(t("data_upload_title"))
 
         uploaded_file = st.file_uploader(
@@ -770,6 +1307,7 @@ with st.sidebar:
                 success, message = convert_excel_to_parquet(uploaded_file)
             if success:
                 st.success(message)
+                analytics.log_event("file_upload", {"filename": uploaded_file.name})
             else:
                 st.error(message)
 
@@ -811,6 +1349,14 @@ st.markdown(
     """.format(logo=_main_logo_html),
     unsafe_allow_html=True,
 )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ANALYTICS DASHBOARD SAYFASI
+# ═══════════════════════════════════════════════════════════════════════════
+
+if st.session_state.get("current_page") == "analytics" and st.session_state.admin_authenticated:
+    _render_analytics_dashboard()
+    st.stop()
 
 # ── Veri Kontrolü ──
 df = load_parquet_data()
@@ -891,6 +1437,15 @@ else:
 # ── Sonuçlar ──
 if search_query and search_query.strip():
     results = search_dataframe(df, search_query)
+
+    # ── Arama olayını logla ──
+    _search_log_key = "_last_logged_search"
+    if st.session_state.get(_search_log_key) != search_query:
+        analytics.log_event("search", {
+            "query": search_query,
+            "result_count": len(results),
+        })
+        st.session_state[_search_log_key] = search_query
 
     if results.empty:
         st.markdown(

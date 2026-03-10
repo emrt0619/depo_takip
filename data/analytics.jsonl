@@ -1,0 +1,9 @@
+{"ts": "2026-03-10T17:32:09.948974", "type": "page_visit"}
+{"ts": "2026-03-10T17:32:09.948974", "type": "search", "data": {"query": "test", "result_count": 5}}
+{"ts": "2026-03-10T17:32:09.950065", "type": "admin_login", "data": {"success": true}}
+{"ts": "2026-03-10T17:34:57.357676", "type": "page_visit"}
+{"ts": "2026-03-10T17:35:58.084063", "type": "search", "data": {"query": "test", "result_count": 28}}
+{"ts": "2026-03-10T17:36:52.530958", "type": "search", "data": {"query": "testadmin123", "result_count": 0}}
+{"ts": "2026-03-10T17:37:09.236163", "type": "admin_login", "data": {"success": true}}
+{"ts": "2026-03-10T17:43:49.429922", "type": "page_visit"}
+{"ts": "2026-03-10T17:44:00.205853", "type": "admin_login", "data": {"success": true}}
