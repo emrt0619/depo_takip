@@ -1802,9 +1802,10 @@ if search_query and search_query.strip():
         })();
         </script>
         """
+        reset_text = "✕ Clear Sort" if st.session_state.get("lang") == "en" else "✕ Sıralamayı Sıfırla"
         _table_html = f'''
         <div class="table-wrapper">
-            <div class="sort-reset-wrapper"><button class="sort-reset-btn">✕ Sıralamayı Sıfırla</button></div>
+            <div class="sort-reset-wrapper"><button class="sort-reset-btn">{reset_text}</button></div>
             <div class="table-container">{_raw_table}</div>
         </div>
         '''
