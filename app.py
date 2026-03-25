@@ -644,6 +644,58 @@ st.markdown(
     }
     .table-container thead th.sort-asc::after { content: '▲'; }
     .table-container thead th.sort-desc::after { content: '▼'; }
+    /* Multi-column sort rank badge */
+    .table-container thead th[data-sort-rank]::before {
+        content: attr(data-sort-rank);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px; height: 16px;
+        font-size: 0.55rem;
+        font-weight: 800;
+        background: rgba(0, 212, 255, 0.2);
+        color: #00d4ff;
+        border-radius: 50%;
+        margin-right: 5px;
+        vertical-align: middle;
+        line-height: 1;
+    }
+    /* Sort reset button */
+    .sort-reset-wrapper {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 8px;
+        min-height: 30px;
+    }
+    .sort-reset-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 14px;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: #ff6b6b;
+        background: rgba(255, 107, 107, 0.08);
+        border: 1px solid rgba(255, 107, 107, 0.2);
+        border-radius: 999px;
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(4px);
+        transition: all 0.25s ease;
+    }
+    .sort-reset-btn.visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+    .sort-reset-btn:hover {
+        background: rgba(255, 107, 107, 0.15);
+        border-color: rgba(255, 107, 107, 0.4);
+        box-shadow: 0 0 12px rgba(255, 107, 107, 0.15);
+    }
     /* Resize handle */
     .th-resize-handle {
         position: absolute;
@@ -1560,67 +1612,178 @@ if search_query and search_query.strip():
                     });
                 });
 
-                // ── Sıralama (Sorting) ──
-                var sortState = {};  // { colIdx: 'asc' | 'desc' }
-                headers.forEach(function(th, colIdx){
-                    if (th.dataset.sortBound) return;
-                    th.dataset.sortBound = '1';
-                    th.addEventListener('click', function(e){
-                        // Resize handle tıklamalarında sıralama yapma
-                        if (e.target.classList.contains('th-resize-handle')) return;
+                // ── Yeni Nesil Akıllı Sıralama (Smart Sorting Engine) ──
 
-                        var tbody = table.querySelector('tbody');
-                        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+                // ▸ Sıfırlama butonu (Python tarafından st.markdown içinde container içine eklendi)
+                // Bu sayede arama yapıldığında Streamlit tüm tabloyu butonla birlikte siler.
+                var wrapper = container.parentElement;
+                var resetBtn = wrapper.querySelector('.sort-reset-btn');
+                if (!resetBtn) return;
+                
+                // Yeni tablo render edildiğinde butonu her zaman gizli tut
+                resetBtn.classList.remove('visible');
 
-                        // Mevcut durumu belirle: yok → asc → desc → yok
-                        var current = sortState[colIdx] || 'none';
-                        var next;
-                        if      (current === 'none') next = 'asc';
-                        else if (current === 'asc')  next = 'desc';
-                        else                          next = 'none';
+                // ── Temel Chunk-Based Doğal Sıralama (Natural Sort) ──
+                function chunkify(str) {
+                    var tokens = [];
+                    // Rakamları ve harf bloklarını ayır (0.5 veya 10 gibi)
+                    var regex = /(\d+\.?\d*)|(\D+)/g;
+                    var match;
+                    while ((match = regex.exec(str)) !== null) {
+                        if (match[1] !== undefined && match[1] !== '') {
+                            tokens.push(parseFloat(match[1]));
+                        } else if (match[2] !== undefined && match[2] !== '') {
+                            tokens.push(match[2].toLowerCase());
+                        }
+                    }
+                    return tokens;
+                }
 
-                        // Tüm sütunların sınıfını temizle
-                        headers.forEach(function(h, i){
-                            h.classList.remove('sort-asc', 'sort-desc');
-                            if (i !== colIdx) delete sortState[i];
-                        });
+                function compareValues(aVal, bVal, dir) {
+                    var aEmpty = (aVal === '' || aVal.replace(/\s/g, '') === '');
+                    var bEmpty = (bVal === '' || bVal.replace(/\s/g, '') === '');
 
-                        if (next === 'none') {
-                            delete sortState[colIdx];
-                            // Orijinal sıraya dön (data-orig-idx kullan)
-                            rows.sort(function(a, b){
-                                return (parseInt(a.dataset.origIdx)||0) - (parseInt(b.dataset.origIdx)||0);
-                            });
+                    // Kural: Boş veya null değerler DAİMA en sona atılır
+                    if (aEmpty && bEmpty) return 0;
+                    if (aEmpty) return 1;
+                    if (bEmpty) return -1;
+
+                    var dirMult = (dir === 'asc') ? 1 : -1;
+                    var aChunks = chunkify(aVal);
+                    var bChunks = chunkify(bVal);
+                    var len = Math.max(aChunks.length, bChunks.length);
+
+                    for (var i = 0; i < len; i++) {
+                        var aC = aChunks[i];
+                        var bC = bChunks[i];
+
+                        if (aC === undefined) return -1 * dirMult; // Blok biterse küçüktür
+                        if (bC === undefined) return 1 * dirMult;
+
+                        var aIsNum = typeof aC === 'number';
+                        var bIsNum = typeof bC === 'number';
+
+                        if (aIsNum && bIsNum) {
+                            if (aC !== bC) return (aC - bC) * dirMult;
+                        } else if (aIsNum && !bIsNum) {
+                            return -1 * dirMult; // ASCII kuralı: Sayılar metinlerden ÖNCE gelir
+                        } else if (!aIsNum && bIsNum) {
+                            return 1 * dirMult;
                         } else {
-                            sortState[colIdx] = next;
-                            th.classList.add('sort-' + next);
-                            var dir = next === 'asc' ? 1 : -1;
+                            // İkisi de metin (localeCompare ÇÖPE ATILDI, düz ASCII string fallback)
+                            if (aC !== bC) {
+                                return (aC < bC ? -1 : 1) * dirMult;
+                            }
+                        }
+                    }
+                    return 0;
+                }
 
-                            rows.sort(function(a, b){
-                                var aCell = a.children[colIdx];
-                                var bCell = b.children[colIdx];
+                // ── Çoklu sıralama state (IDLE -> ASC -> DESC) ──
+                var sortKeys = [];
+
+                function findSortKeyIndex(colIdx) {
+                    for (var i = 0; i < sortKeys.length; i++) {
+                        if (sortKeys[i].col === colIdx) return i;
+                    }
+                    return -1;
+                }
+
+                // ── Çoklu kıstasa göre sırala ──
+                function performSort() {
+                    var tbody = table.querySelector('tbody');
+                    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+                    if (sortKeys.length === 0) {
+                        // Sıralama kalmadıysa orijinal sıraya dön
+                        rows.sort(function(a, b) {
+                            return (parseInt(a.dataset.origIdx) || 0) - (parseInt(b.dataset.origIdx) || 0);
+                        });
+                    } else {
+                        rows.sort(function(a, b) {
+                            for (var k = 0; k < sortKeys.length; k++) {
+                                var key = sortKeys[k];
+                                var aCell = a.children[key.col];
+                                var bCell = b.children[key.col];
                                 var aVal = aCell ? aCell.textContent.trim() : '';
                                 var bVal = bCell ? bCell.textContent.trim() : '';
-                                // Sayısal karşılaştırma dene
-                                var aNum = parseFloat(aVal.replace(/[^\d.\-]/g, ''));
-                                var bNum = parseFloat(bVal.replace(/[^\d.\-]/g, ''));
-                                if (!isNaN(aNum) && !isNaN(bNum)) {
-                                    return (aNum - bNum) * dir;
-                                }
-                                // Metin karşılaştırma (locale-aware)
-                                return aVal.localeCompare(bVal, 'tr', {sensitivity:'base'}) * dir;
-                            });
-                        }
-
-                        // DOM'u güncelle
-                        rows.forEach(function(row){ tbody.appendChild(row); });
-                    });
-                });
+                                
+                                var cmp = compareValues(aVal, bVal, key.dir);
+                                if (cmp !== 0) return cmp;
+                            }
+                            return (parseInt(a.dataset.origIdx) || 0) - (parseInt(b.dataset.origIdx) || 0);
+                        });
+                    }
+                    rows.forEach(function(row) { tbody.appendChild(row); });
+                }
 
                 // ── Orijinal sıra indeksi kaydet ──
                 var allRows = table.querySelectorAll('tbody tr');
-                allRows.forEach(function(row, i){
+                allRows.forEach(function(row, i) {
                     if (!row.dataset.origIdx) row.dataset.origIdx = i;
+                });
+
+                // ── Header sınıflarını ve rank göstergelerini güncelle ──
+                function updateHeaderClasses() {
+                    headers.forEach(function(h) {
+                        h.classList.remove('sort-asc', 'sort-desc');
+                        h.removeAttribute('data-sort-rank');
+                    });
+                    sortKeys.forEach(function(key, idx) {
+                        var th = headers[key.col];
+                        if (th) {
+                            th.classList.add('sort-' + key.dir);
+                            if (sortKeys.length > 1) {
+                                th.setAttribute('data-sort-rank', String(idx + 1));
+                            }
+                        }
+                    });
+                    // Reset butonu görünürlüğü
+                    if (sortKeys.length > 0) {
+                        resetBtn.classList.add('visible');
+                    } else {
+                        resetBtn.classList.remove('visible');
+                    }
+                }
+
+                // ── Reset butonu tıklama olayı ──
+                resetBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    sortKeys = [];
+                    updateHeaderClasses();
+                    performSort();
+                });
+
+                // ── Sütun başlıklarına tıklama olayı ──
+                headers.forEach(function(th, colIdx) {
+                    if (th.dataset.sortBound) return;
+                    th.dataset.sortBound = '1';
+                    th.addEventListener('click', function(e) {
+                        if (e.target.classList.contains('th-resize-handle')) return;
+
+                        var existingIdx = findSortKeyIndex(colIdx);
+
+                        if (e.shiftKey) {
+                            // Çoklu Sıralama: IDLE -> ASC -> DESC -> IDLE
+                            if (existingIdx !== -1) {
+                                if (sortKeys[existingIdx].dir === 'asc') sortKeys[existingIdx].dir = 'desc';
+                                else sortKeys.splice(existingIdx, 1);
+                            } else {
+                                sortKeys.push({ col: colIdx, dir: 'asc' });
+                            }
+                        } else {
+                            // Tek Sütun Sıralaması:
+                            if (existingIdx !== -1 && sortKeys.length === 1) {
+                                if (sortKeys[0].dir === 'asc') sortKeys[0].dir = 'desc';
+                                else sortKeys = []; // DESC'den sonra IDLE
+                            } else {
+                                sortKeys = [{ col: colIdx, dir: 'asc' }];
+                            }
+                        }
+
+                        updateHeaderClasses();
+                        performSort();
+                    });
                 });
 
                 // ── Satır Seçme (Row Click) ──
@@ -1639,7 +1802,12 @@ if search_query and search_query.strip():
         })();
         </script>
         """
-        _table_html = '<div class="table-container">' + _raw_table + '</div>'
+        _table_html = f'''
+        <div class="table-wrapper">
+            <div class="sort-reset-wrapper"><button class="sort-reset-btn">✕ Sıralamayı Sıfırla</button></div>
+            <div class="table-container">{_raw_table}</div>
+        </div>
+        '''
         st.markdown(_table_html, unsafe_allow_html=True)
         # Tablo etkileşim JS'ini components.html ile enjekte et
         components.html(_table_js, height=0)
@@ -1648,6 +1816,16 @@ else:
         '<div class="guide-text">{}</div>'.format(t("search_guide")),
         unsafe_allow_html=True,
     )
+    # Arama temizlendiğinde DOM'da yetim kalan sıralama sıfırlama butonlarını temizle
+    components.html("""
+    <script>
+    (function(){
+        var pd = window.parent ? window.parent.document : document;
+        var wrappers = pd.querySelectorAll('.sort-reset-wrapper');
+        wrappers.forEach(function(w){ w.remove(); });
+    })();
+    </script>
+    """, height=0)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FOOTER
